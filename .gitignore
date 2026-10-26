@@ -1,0 +1,61 @@
+
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Build outputs
+build/
+coverage/
+*.tsbuildinfo
+
+# Android
+android/.gradle/
+android/local.properties
+android/.cxx/
+android/**/build/
+android/**/.externalNativeBuild/
+*.apk
+*.aab
+
+# iOS
+ios/Pods/
+ios/build/
+ios/DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+*.provisionprofile
+
+# Debug logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Editor and operating system files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
