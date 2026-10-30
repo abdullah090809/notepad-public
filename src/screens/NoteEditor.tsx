@@ -2888,6 +2888,128 @@ export function NoteEditor({ id, isNew }: { id: string; isNew: boolean }) {
 
   const activeMatchCharOffsetRef = useRef(0);
 
+  /* While searching, the whole note is drawn as ONE static <Text>. Its real wrapped lines are measured
+     here (onTextLayout), so the arrows can scroll to the exact line of the match instead of using the
+     estimated chars-per-line guess, which drifts further and further on long notes. */
+  const searchLayoutRef = useRef<NativeLayoutCache | null>(null);
+  const pendingSearchRevealRef = useRef<{ offset: number; animated: boolean } | null>(null);
+  const searchRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const revealSearchMatchExact = useCallback(
+    (offset: number, animated: boolean): boolean => {
+      const cache = searchLayoutRef.current;
+      const body = bodyRef.current;
+      if (
+        !cache ||
+        cache.scale !== scale ||
+        cache.lines.length === 0 ||
+        cache.text.length !== body.length ||
+        cache.text !== body
+      ) {
+        return false;
+      }
+      const lines = cache.lines;
+      // last measured line that starts at or before the match start
+      let lo = 0;
+      let hi = lines.length - 1;
+      let idx = 0;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (lines[mid].startOffset <= offset) {
+          idx = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      const line = lines[idx];
+      const lh = line.height || getEditorLineHeight(scale);
+      const cursorY = EDITOR_TOP_PAD + line.y;
+      const textBottom = EDITOR_TOP_PAD + cache.totalHeight + EDITOR_BOTTOM_PAD;
+      lastKnownCursorYRef.current = cursorY;
+      const decision = calculateScrollDecision({
+        reason: 'search',
+        cursorY,
+        lineHeight: lh,
+        textBottom,
+        curY: scrollY.current,
+        viewH: getUsableViewportHeight(),
+        contentH: textBottom,
+      });
+      if (decision.shouldScroll) {
+        scrollY.current = decision.targetY;
+        scrollRef.current?.scrollTo({ y: decision.targetY, animated });
+      }
+      return true;
+    },
+    [getUsableViewportHeight, scale]
+  );
+
+  const handleSearchTextLayout = useCallback(
+    (e: any) => {
+      const rawLines = e?.nativeEvent?.lines;
+      if (!rawLines || !Array.isArray(rawLines) || rawLines.length === 0) return;
+      const parsed = parseNativeTextLines(
+        fullBodyForSearchOrHighlight,
+        rawLines,
+        getEditorLineHeight(scale)
+      );
+      searchLayoutRef.current = {
+        text: fullBodyForSearchOrHighlight,
+        width: editorWidthRef.current || Dimensions.get('window').width,
+        scale,
+        fontFamily: inputFont,
+        lines: parsed.lines,
+        totalHeight: parsed.totalHeight,
+      };
+      const pending = pendingSearchRevealRef.current;
+      if (pending && revealSearchMatchExact(pending.offset, pending.animated)) {
+        pendingSearchRevealRef.current = null;
+        if (searchRevealTimerRef.current) {
+          clearTimeout(searchRevealTimerRef.current);
+          searchRevealTimerRef.current = null;
+        }
+      }
+    },
+    [fullBodyForSearchOrHighlight, scale, inputFont, revealSearchMatchExact]
+  );
+
+  /* Wait for the next real layout of the highlighted text (the bold current match can re-wrap lines),
+     then scroll to the measured line. If no new layout arrives, use the latest one after a short delay. */
+  const requestSearchReveal = useCallback(
+    (offset: number, animated: boolean) => {
+      pendingSearchRevealRef.current = { offset, animated };
+      if (searchRevealTimerRef.current) clearTimeout(searchRevealTimerRef.current);
+      searchRevealTimerRef.current = setTimeout(() => {
+        searchRevealTimerRef.current = null;
+        const p = pendingSearchRevealRef.current;
+        if (!p) return;
+        pendingSearchRevealRef.current = null;
+        if (!revealSearchMatchExact(p.offset, p.animated)) {
+          executeScrollDecision('search', p.offset, bodyRef.current, p.animated);
+        }
+      }, 250);
+    },
+    [revealSearchMatchExact, executeScrollDecision]
+  );
+
+  useEffect(() => {
+    if (searchOpen) return;
+    pendingSearchRevealRef.current = null;
+    searchLayoutRef.current = null;
+    if (searchRevealTimerRef.current) {
+      clearTimeout(searchRevealTimerRef.current);
+      searchRevealTimerRef.current = null;
+    }
+  }, [searchOpen]);
+
+  useEffect(
+    () => () => {
+      if (searchRevealTimerRef.current) clearTimeout(searchRevealTimerRef.current);
+    },
+    []
+  );
+
   const jumpTo = useCallback(
     (n: number) => {
       if (matches.length === 0) return;
@@ -2896,9 +3018,9 @@ export function NoteEditor({ id, isNew }: { id: string; isNew: boolean }) {
       const start = matches[i];
       activeMatchCharOffsetRef.current = start;
       applyFullTextAndWindow(bodyRef.current, start, windowedModeRef.current);
-      executeScrollDecision('search', start, bodyRef.current, true);
+      requestSearchReveal(start, true);
     },
-    [matches, executeScrollDecision, applyFullTextAndWindow]
+    [matches, requestSearchReveal, applyFullTextAndWindow]
   );
 
   // When query or matches change during search, preserve nearest match at/after current match offset
@@ -2917,8 +3039,8 @@ export function NoteEditor({ id, isNew }: { id: string; isNew: boolean }) {
     const start = matches[nextIdx];
     activeMatchCharOffsetRef.current = start;
     applyFullTextAndWindow(bodyRef.current, start, windowedModeRef.current);
-    executeScrollDecision('search', start, bodyRef.current, true);
-  }, [activeSearchQuery, searchOpen, matches, executeScrollDecision, applyFullTextAndWindow]);
+    requestSearchReveal(start, true);
+  }, [activeSearchQuery, searchOpen, matches, requestSearchReveal, applyFullTextAndWindow]);
 
   const highlightNodes = useMemo(() => {
     if (!searchOpen || !activeSearchQuery) return null;
@@ -4144,6 +4266,7 @@ export function NoteEditor({ id, isNew }: { id: string; isNew: boolean }) {
               >
                 <Text
                   textBreakStrategy="simple"
+                  onTextLayout={handleSearchTextLayout}
                   style={{
                     color: theme.text,
                     fontFamily: inputFont,
