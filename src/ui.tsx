@@ -19,6 +19,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppearance } from './appearance';
+import { useAppLocked } from './gate';
 
 export type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -726,8 +727,9 @@ export function ChoiceModal<V extends string | number>({
   onClose: () => void;
 }) {
   const { theme } = useAppearance();
+  const appLocked = useAppLocked();
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible && !appLocked} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable
         style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 }}
         onPress={onClose}
@@ -775,8 +777,9 @@ export function PickerModal({
   onClose: () => void;
 }) {
   const { theme } = useAppearance();
+  const appLocked = useAppLocked();
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible && !appLocked} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable
         style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 }}
         onPress={onClose}
@@ -832,12 +835,13 @@ export function PromptModal({
   onClose: () => void;
 }) {
   const { theme, inputFont } = useAppearance();
+  const appLocked = useAppLocked();
   const [text, setText] = useState(initial);
   useEffect(() => {
     if (visible) setText(initial);
   }, [visible, initial]);
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible && !appLocked} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable
         style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 }}
         onPress={onClose}

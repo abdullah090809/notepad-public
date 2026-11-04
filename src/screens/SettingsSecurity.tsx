@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAppearance } from '../appearance';
 import { useNav } from '../nav';
 import { useSettings } from '../settings';
+import { useAppLocked } from '../gate';
 import {
   authenticateBiometric,
   biometricAvailable,
@@ -48,6 +49,7 @@ export function SecuritySettings() {
 
   // Authentication gate state before opening PasswordScreen
   const [gateOpen, setGateOpen] = useState(false);
+  const appLocked = useAppLocked();
   const [currentPwInput, setCurrentPwInput] = useState('');
   const [showCurrentPw, setShowCurrentPw] = useState(false);
   const [gateError, setGateError] = useState('');
@@ -210,7 +212,7 @@ export function SecuritySettings() {
 
       {/* Verify Current Password Gate Modal */}
       <Modal
-        visible={gateOpen}
+        visible={gateOpen && !appLocked}
         transparent
         animationType="fade"
         onRequestClose={() => setGateOpen(false)}
@@ -351,6 +353,7 @@ function PasswordField({
   onToggleShow: () => void;
 }) {
   const { theme, inputFont } = useAppearance();
+  const appLocked = useAppLocked();
   return (
     <View style={{ marginBottom: 18 }}>
       <T size={14} bold style={{ marginBottom: 8, color: theme.text }}>
@@ -373,6 +376,7 @@ function PasswordField({
           value={value}
           onChangeText={onChange}
           secureTextEntry={!show}
+          editable={!appLocked}
           autoCapitalize="none"
           autoCorrect={false}
           placeholder={placeholder}

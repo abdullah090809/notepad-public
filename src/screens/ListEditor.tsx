@@ -88,6 +88,7 @@ import { progressColor, progressText, serializeListRevision } from '../format';
 import { useNav } from '../nav';
 import { withExternalUi } from '../security';
 import { useReadOnly, useSettings } from '../settings';
+import { useAppLocked } from '../gate';
 import { Header, IconBtn, IconName, Screen, T, confirm, toast } from '../ui';
 
 function hasNonWhitespace(s: string): boolean {
@@ -209,6 +210,8 @@ const ListRow = React.memo(
       [e.checked, theme.subtext, theme.text, inputFont, scale]
     );
 
+    const appLocked = useAppLocked();
+
     return (
       <View style={rowStyle}>
         <Pressable
@@ -233,7 +236,7 @@ const ListRow = React.memo(
           onChangeText={handleTextChange}
           placeholder={isReadOnly ? '' : 'List item'}
           placeholderTextColor={theme.subtext}
-          editable={!isReadOnly}
+          editable={!isReadOnly && !appLocked}
           multiline
           textBreakStrategy="simple"
           blurOnSubmit
@@ -286,6 +289,7 @@ export function ListEditor({ id, isNew }: { id: string; isNew: boolean }) {
   const { theme, scale, inputFont } = useAppearance();
   const { s, get } = useSettings();
   const { isReadOnly } = useReadOnly();
+  const appLocked = useAppLocked();
 
   const [loaded, setLoaded] = useState(false);
   const [title, setTitle] = useState('');
@@ -952,7 +956,7 @@ export function ListEditor({ id, isNew }: { id: string; isNew: boolean }) {
           placeholderTextColor={theme.subtext}
           autoCapitalize={s.titleCaps}
           autoFocus={isNew && entries.length === 0 && !isReadOnly}
-          editable={!isReadOnly}
+          editable={!isReadOnly && !appLocked}
           style={{
             width: '100%',
             color: theme.text,

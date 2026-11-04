@@ -25,3 +25,13 @@ export function singleFlight<T>(fn: () => Promise<T>): () => Promise<T> {
     return p;
   };
 }
+
+/**
+ * True while a lock or password screen covers the app. Editors, text boxes and dialogs underneath read it to stop
+ * accepting input (no keyboard, no typing) and to hide dialogs that would otherwise float above the lock screen.
+ */
+export const AppLockedContext = createContext<boolean>(false);
+
+export const useAppLocked = (): boolean => useContext(AppLockedContext);
+
+export const lockKeyboard = { allowed: false };

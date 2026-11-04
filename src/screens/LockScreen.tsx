@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, Pressable, TextInput, View } from 'react-native';
+import { Alert, AppState, BackHandler, Keyboard, Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppearance } from '../appearance';
@@ -14,25 +14,31 @@ import {
   verifyPassword,
 } from '../security';
 import { formatRemaining } from '../format';
+import { lockKeyboard } from '../gate';
 import { Header, IconBtn, Screen, T } from '../ui';
 
 type Props = {
   mode: 'launch' | 'gate';
   onSuccess: () => void;
   onCancel: () => void;
+  /** When false, the fingerprint prompt and the keyboard are held back (opening animation still playing). Default true. */
+  active?: boolean;
 };
 
-export function LockScreen({ onSuccess, onCancel }: Props) {
+export function LockScreen({ onSuccess, onCancel, active = true }: Props) {
   const { theme, inputFont } = useAppearance();
-  const { s, update } = useSettings();
+  const { s, update, hydrated } = useSettings();
   const insets = useSafeAreaInsets();
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
   const [error, setError] = useState('');
   const [bioReady, setBioReady] = useState(false);
+  const [bioChecked, setBioChecked] = useState(false);
+  const [waited, setWaited] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const autoTried = useRef(false);
+  const passwordRef = useRef<TextInput>(null);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -50,20 +56,40 @@ export function LockScreen({ onSuccess, onCancel }: Props) {
   }, [s.fingerprint, onSuccess]);
 
   useEffect(() => {
+    const t = setTimeout(() => setWaited(true), 1200);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
     let alive = true;
-    if (s.fingerprint) {
-      biometricAvailable().then((ok) => {
-        if (alive) setBioReady(ok);
+    if (!s.fingerprint) {
+      setBioReady(false);
+      setBioChecked(true);
+      return;
+    }
+    biometricAvailable()
+      .then((ok) => {
+        if (alive) {
+          setBioReady(ok);
+          setBioChecked(true);
+        }
+      })
+      .catch(() => {
+        if (alive) setBioChecked(true);
       });
-    }
-    if (!autoTried.current) {
-      autoTried.current = true;
-      tryFingerprint();
-    }
     return () => {
       alive = false;
     };
-  }, [s.fingerprint, tryFingerprint]);
+  }, [hydrated, s.fingerprint]);
+
+  /* The system fingerprint prompt must not appear on top of the opening animation: it is only started once
+     `active` is true (App.tsx sets it when the splash has finished). Once per lock screen. */
+  useEffect(() => {
+    if (!active || autoTried.current || !s.fingerprint) return;
+    autoTried.current = true;
+    tryFingerprint();
+  }, [active, s.fingerprint, tryFingerprint]);
 
   const submit = async () => {
     if (!password || verifying) return;
@@ -142,7 +168,31 @@ export function LockScreen({ onSuccess, onCancel }: Props) {
     );
   };
 
-  const isBioActive = s.fingerprint && bioReady && !showPassword;
+  const pending = !waited && (!hydrated || !bioChecked);
+  const isBioActive = !pending && s.fingerprint && bioReady && !showPassword;
+  const passwordView = !pending && !isBioActive;
+
+  useEffect(() => {
+    lockKeyboard.allowed = active && passwordView;
+    return () => {
+      lockKeyboard.allowed = false;
+    };
+  }, [active, passwordView]);
+
+  useEffect(() => {
+    if (!active || !passwordView) return;
+    const t = setTimeout(() => passwordRef.current?.focus(), 60);
+    return () => clearTimeout(t);
+  }, [active, passwordView]);
+
+  useEffect(() => {
+    if (passwordView) return;
+    Keyboard.dismiss();
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') Keyboard.dismiss();
+    });
+    return () => sub.remove();
+  }, [passwordView]);
 
   return (
     <Screen>
@@ -152,7 +202,9 @@ export function LockScreen({ onSuccess, onCancel }: Props) {
         backIcon="close"
       />
 
-      {isBioActive ? (
+      {pending ? (
+        <View style={{ flex: 1 }} />
+      ) : isBioActive ? (
         <View style={{ flex: 1, justifyContent: 'space-between' }}>
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
             <Pressable
@@ -243,7 +295,7 @@ export function LockScreen({ onSuccess, onCancel }: Props) {
                 autoCapitalize="none"
                 autoCorrect={false}
                 onSubmitEditing={submit}
-                autoFocus
+                ref={passwordRef}
                 style={{
                   flex: 1,
                   color: theme.text,

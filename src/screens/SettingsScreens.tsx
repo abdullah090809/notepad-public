@@ -5,6 +5,7 @@ import { FONT_OPTIONS, SIZE_LABELS, resolveFont, useAppearance } from '../appear
 import { deleteAllRevisions } from '../db';
 import { useNav } from '../nav';
 import { useSettings } from '../settings';
+import { useAppLocked } from '../gate';
 import {
   DEFAULT_CUSTOM,
   THEME_ORDER,
@@ -594,6 +595,7 @@ function ColorField({
   onChange: (hex: string) => void;
 }) {
   const { theme } = useAppearance();
+  const appLocked = useAppLocked();
   const [hex, setHex] = useState(value);
 
   useEffect(() => {
@@ -647,6 +649,7 @@ function ColorField({
             setHex(v);
             if (isHex(v)) onChange(v.toLowerCase());
           }}
+          editable={!appLocked}
           autoCapitalize="none"
           autoCorrect={false}
           maxLength={7}

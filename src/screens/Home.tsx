@@ -36,7 +36,7 @@ import {
 import { formatDate, progressColor, progressText } from '../format';
 
 const SEARCH_DEBOUNCE_MS = 150;
-import { useGate } from '../gate';
+import { useAppLocked, useGate } from '../gate';
 import { useNav } from '../nav';
 import { hasPassword } from '../security';
 import { useReadOnly, useSettings } from '../settings';
@@ -242,6 +242,7 @@ export function HomeScreen({ folderId }: { folderId: string | null }) {
   const { s, get } = useSettings();
   const { isReadOnly, setReadOnly } = useReadOnly();
   const gate = useGate();
+  const appLocked = useAppLocked();
   const insets = useSafeAreaInsets();
 
   const [items, setItems] = useState<DashItem[]>(() => homeCache.get(folderId ?? '') ?? []);
@@ -639,6 +640,7 @@ export function HomeScreen({ folderId }: { folderId: string | null }) {
             value={query}
             onChangeText={setQuery}
             autoFocus
+            editable={!appLocked}
             placeholder="Search notes and lists"
             placeholderTextColor={theme.subtext}
             style={{

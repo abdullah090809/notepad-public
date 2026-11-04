@@ -35,6 +35,7 @@ import { countText } from '../format';
 import { useNav } from '../nav';
 import { withExternalUi } from '../security';
 import { useSettings } from '../settings';
+import { useAppLocked } from '../gate';
 import { Header, IconBtn, IconName, Screen, T, confirm, toast } from '../ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -1717,6 +1718,8 @@ export function NoteEditor({ id, isNew }: { id: string; isNew: boolean }) {
   const hasPoppedRef = useRef(false);
 
   const isEffectiveReadOnly = readOnly || s.readOnlyMode;
+  /* A lock screen is covering the app: no typing, no keyboard in this screen's text boxes. */
+  const appLocked = useAppLocked();
 
   const applyProgrammaticSelection = useCallback((cursor: number) => {
     dbg(`PROGRAMMATIC selection -> ${cursor}`);
@@ -3609,7 +3612,7 @@ export function NoteEditor({ id, isNew }: { id: string; isNew: boolean }) {
           placeholderTextColor={theme.subtext}
           autoCapitalize={s.titleCaps}
           autoFocus={isNew && !isEffectiveReadOnly}
-          editable={!isEffectiveReadOnly}
+          editable={!isEffectiveReadOnly && !appLocked}
           returnKeyType="next"
           style={{
             width: '100%',
@@ -3633,6 +3636,7 @@ export function NoteEditor({ id, isNew }: { id: string; isNew: boolean }) {
       s.titleCaps,
       isNew,
       isEffectiveReadOnly,
+      appLocked,
       inputFont,
       scale,
     ]
@@ -4095,6 +4099,7 @@ export function NoteEditor({ id, isNew }: { id: string; isNew: boolean }) {
                 value={query}
                 onChangeText={setQuery}
                 autoFocus
+                editable={!appLocked}
                 blurOnSubmit={false}
                 placeholder=""
                 placeholderTextColor={theme.subtext}
@@ -4356,7 +4361,7 @@ export function NoteEditor({ id, isNew }: { id: string; isNew: boolean }) {
                     onChangeText={changeBody}
                     multiline
                     textBreakStrategy="simple"
-                    editable={!isEffectiveReadOnly}
+                    editable={!isEffectiveReadOnly && !appLocked}
                     scrollEnabled={false}
                     textAlignVertical="top"
                     placeholder={

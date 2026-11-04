@@ -5,6 +5,7 @@ import {
   AppStateStatus,
   BackHandler,
   Easing,
+  Keyboard,
   PanResponder,
   Platform,
   StyleSheet,
@@ -22,9 +23,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { SettingsProvider, useSettings } from './src/settings';
 import { AppearanceProvider, useAppearance } from './src/appearance';
 import { NavProvider, Route, useNav } from './src/nav';
-import { GateContext, singleFlight } from './src/gate';
+import { AppLockedContext, GateContext, lockKeyboard, singleFlight } from './src/gate';
 import { ToastHost } from './src/ui';
-import { authState, hasPassword } from './src/security';
+import { authState, hasPassword, subscribeSecurityChange } from './src/security';
 import { startupTasks } from './src/backup';
 
 import { HomeScreen } from './src/screens/Home';
@@ -256,17 +257,25 @@ function Shell() {
   const [gateOpen, setGateOpen] = useState(false);
   const gateResolve = useRef<((ok: boolean) => void) | null>(null);
   const leftAt = useRef<number | null>(null);
+  /** Whether a password exists (null = not read yet). Kept in a ref so that coming back to the app can lock
+   *  in the very same moment, instead of after an asynchronous read during which the notes were visible/tappable. */
+  const hasPwRef = useRef<boolean | null>(null);
 
   /* ----- start up ----- */
   useEffect(() => {
     let alive = true;
     hasPassword().then((has) => {
       if (!alive) return;
+      hasPwRef.current = has;
       setLaunchLocked(has);
       setReady(true);
     });
+    const unsub = subscribeSecurityChange((has) => {
+      hasPwRef.current = has;
+    });
     return () => {
       alive = false;
+      unsub();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -286,8 +295,21 @@ function Shell() {
         const left = leftAt.current;
         leftAt.current = null;
         if (left !== null && Date.now() - left >= get().inactivitySeconds * 1000) {
+          // Lock immediately when a password is known to exist (no gap in which the open note can be touched),
+          // take the keyboard/focus away from the editor underneath, then confirm with the stored value.
+          const assumed = hasPwRef.current === true;
+          if (assumed) {
+            Keyboard.dismiss();
+            setRelocked(true);
+          }
           hasPassword().then((has) => {
-            if (has) setRelocked(true);
+            hasPwRef.current = has;
+            if (has && !assumed) {
+              Keyboard.dismiss();
+              setRelocked(true);
+            } else if (!has && assumed) {
+              setRelocked(false);
+            }
           });
         }
         return;
@@ -374,21 +396,41 @@ function Shell() {
     }
   }, [s.hideInBackground]);
 
+  const lockedNow = (ready && (launchLocked || relocked)) || gateOpen;
+
+  useEffect(() => {
+    if (!lockedNow) return;
+    if (!lockKeyboard.allowed) Keyboard.dismiss();
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      if (!lockKeyboard.allowed) Keyboard.dismiss();
+    });
+    return () => sub.remove();
+  }, [lockedNow]);
+
   if (!ready && !s.splashAnimation) {
     return <View style={{ flex: 1, backgroundColor: theme.bg }} />;
   }
 
   const showLock = ready && (launchLocked || relocked);
   const showSplash = s.splashAnimation && !splashDone;
+  /* While a lock/gate screen is up, the screens behind it must not react to touches, keys or screen readers. */
+  const stackBlocked = showLock || gateOpen;
 
   return (
     <GateContext.Provider value={gate}>
+      <AppLockedContext.Provider value={stackBlocked}>
       <View style={{ flex: 1, backgroundColor: theme.bg }}>
         <StatusBar style={theme.isDark ? 'light' : 'dark'} />
 
         {/* Notes and previous screens stay mounted with smooth native slide transition animations */}
-        {ready && !launchLocked
-          ? nav.stack.map((route, idx) => {
+        {ready && !launchLocked ? (
+          <View
+            style={StyleSheet.absoluteFill}
+            pointerEvents={stackBlocked ? 'none' : 'auto'}
+            importantForAccessibility={stackBlocked ? 'no-hide-descendants' : 'auto'}
+            accessibilityElementsHidden={stackBlocked}
+          >
+            {nav.stack.map((route, idx) => {
               const p = route.params ?? {};
               const key = `stack-${idx}-${route.name}-${p.id ?? p.folderId ?? ''}`;
               return (
@@ -404,14 +446,16 @@ function Shell() {
                   {renderRoute(route, idx)}
                 </AnimatedScreen>
               );
-            })
-          : null}
+            })}
+          </View>
+        ) : null}
 
         {showLock ? (
           <View style={StyleSheet.absoluteFill}>
             <LockScreen
               key="lock-launch"
               mode="launch"
+              active={!showSplash}
               onSuccess={() => {
                 setLaunchLocked(false);
                 setRelocked(false);
@@ -455,6 +499,7 @@ function Shell() {
           />
         ) : null}
       </View>
+      </AppLockedContext.Provider>
     </GateContext.Provider>
   );
 }
